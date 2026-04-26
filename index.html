@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VLM 04 — Document AI: Donut, ColPali & Layout-Aware Models</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-card: #0d1117;
+            --bg-code: #161b22;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent: #76B900;
+            --accent-dim: #76B90044;
+            --accent-glow: #76B90033;
+            --border: #21262d;
+            --font-display: 'Space Grotesk', sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+            --font-body: 'Inter', sans-serif;
+            --max-width: 900px;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            font-size: 17px;
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 1.5rem;
+            text-align: center;
+            position: relative;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .hero > * { position: relative; z-index: 1; }
+        .series-label {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+        }
+        .hero h1 {
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 5vw, 3.2rem);
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.2;
+            margin-bottom: 1rem;
+        }
+        .hero h1 .accent { color: var(--accent); }
+        .hero .subtitle {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            max-width: 640px;
+            margin-bottom: 2rem;
+        }
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            justify-content: center;
+            margin-bottom: 2.5rem;
+        }
+        .tag {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            background: var(--accent-dim);
+            white-space: nowrap;
+        }
+        .pipeline {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+            margin-bottom: 1rem;
+            max-width: var(--max-width);
+        }
+        .pipeline-step {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            padding: 0.3rem 0.7rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        .pipeline-arrow { color: var(--accent); font-size: 0.9rem; font-weight: 700; }
+        .slide {
+            min-height: 100vh;
+            max-width: var(--max-width);
+            margin: 0 auto;
+            padding: 4rem 1.5rem;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .slide-number {
+            font-family: var(--font-display);
+            font-size: 5rem;
+            font-weight: 700;
+            color: var(--accent-dim);
+            position: absolute;
+            top: 2rem;
+            right: 1.5rem;
+            line-height: 1;
+            user-select: none;
+        }
+        .slide h2 {
+            font-family: var(--font-display);
+            font-size: 1.9rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 1.5rem;
+            line-height: 1.25;
+        }
+        .slide h3 {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .slide p { margin-bottom: 1rem; color: var(--text-secondary); }
+        .slide p strong { color: var(--text-primary); }
+        .slide ul, .slide ol { margin-bottom: 1rem; padding-left: 1.5rem; color: var(--text-secondary); }
+        .slide li { margin-bottom: 0.4rem; }
+        .slide li strong { color: var(--text-primary); }
+        .slide code {
+            font-family: var(--font-mono);
+            font-size: 0.88em;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            padding: 0.05rem 0.35rem;
+            border-radius: 3px;
+            color: #c9d1d9;
+        }
+        .code-block {
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 1.25rem 0;
+            overflow: hidden;
+        }
+        .code-header {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            background: rgba(118, 185, 0, 0.08);
+            padding: 0.4rem 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .code-block pre { margin: 0; padding: 1rem; overflow-x: auto; }
+        .code-block code {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #c9d1d9;
+            background: transparent;
+            border: none;
+            padding: 0;
+        }
+        .kw { color: #ff7b72; }
+        .fn { color: #d2a8ff; }
+        .str { color: #a5d6ff; }
+        .cm { color: #8b949e; font-style: italic; }
+        .num { color: #79c0ff; }
+        .type { color: #ffa657; }
+        .dir { color: #ff7b72; }
+        .mac { color: #ffa657; }
+        .table-wrap {
+            overflow-x: auto;
+            margin: 1.25rem 0;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-family: var(--font-display);
+            white-space: nowrap;
+        }
+        td {
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:nth-child(even) td { background: rgba(13, 17, 23, 0.5); }
+        .diagram-flow {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-box {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            text-align: center;
+            white-space: nowrap;
+        }
+        .diagram-box.accent { border-color: var(--accent); color: var(--accent); background: rgba(118, 185, 0, 0.08); }
+        .diagram-box.dim { color: var(--text-secondary); border-color: var(--border); }
+        .diagram-arrow { color: var(--accent); font-size: 1.3rem; font-weight: 700; }
+        .diagram-vertical {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.3rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-vertical .diagram-arrow { font-size: 1.1rem; }
+        .hierarchy {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .hierarchy-level { display: flex; align-items: center; gap: 0.75rem; }
+        .hierarchy-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            min-width: 80px;
+            text-align: right;
+        }
+        .hierarchy-items { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+        .hierarchy-item {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        .hierarchy-item.accent { border-color: var(--accent); color: var(--accent); background: rgba(118, 185, 0, 0.08); }
+        .diagram-grid {
+            display: grid;
+            gap: 0.75rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+        .diagram-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+        .diagram-panel {
+            padding: 1rem;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        .diagram-panel.accent-border { border-left: 3px solid var(--accent); }
+        .diagram-panel h4 {
+            font-family: var(--font-display);
+            font-size: 1rem;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+        }
+        .diagram-panel p, .diagram-panel ul { font-size: 0.85rem; }
+        .callout {
+            background: var(--bg-card);
+            border-left: 3px solid var(--accent);
+            border-radius: 0 8px 8px 0;
+            padding: 1rem 1.25rem;
+            margin: 1.25rem 0;
+        }
+        .callout p { margin-bottom: 0; }
+        .callout p + p { margin-top: 0.5rem; }
+        .callout .callout-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.3rem;
+        }
+        .contents-list { list-style: none; padding-left: 0; counter-reset: contents; }
+        .contents-list li {
+            counter-increment: contents;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .contents-list li:last-child { border-bottom: none; }
+        .contents-list li::before {
+            content: counter(contents, decimal-leading-zero);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            min-width: 2rem;
+        }
+        .contents-list a { color: var(--text-primary); text-decoration: none; transition: color 0.2s; }
+        .contents-list a:hover { color: var(--accent); }
+        .footer {
+            text-align: center;
+            padding: 3rem 1.5rem;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+            max-width: var(--max-width);
+            margin: 0 auto;
+        }
+        .footer a { color: var(--accent); text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+        .canvas-wrap {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1.25rem 0;
+            overflow-x: auto;
+        }
+        .canvas-wrap canvas, .canvas-wrap svg { display: block; margin: 0 auto; max-width: 100%; }
+        .badge {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            padding: 0.1rem 0.45rem;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            vertical-align: middle;
+            margin-left: 0.3rem;
+        }
+        .badge.ok    { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+        .badge.warn  { border-color: #ffa657; color: #ffa657; background: rgba(255,166,87,0.08); }
+        .badge.bad   { border-color: #ff7b72; color: #ff7b72; background: rgba(255,123,114,0.08); }
+        @media (max-width: 640px) {
+            .slide { padding: 3rem 1rem; min-height: auto; }
+            .slide-number { font-size: 3rem; top: 1.5rem; right: 1rem; }
+            .slide h2 { font-size: 1.5rem; }
+            .diagram-grid.cols-2, .diagram-grid.cols-3 { grid-template-columns: 1fr; }
+            .pipeline { gap: 0.15rem; }
+            .pipeline-step { font-size: 0.6rem; padding: 0.2rem 0.4rem; }
+            .hero h1 { font-size: 1.8rem; }
+            table { font-size: 0.78rem; }
+        }
+    </style>
+</head>
+<body>
+<header class="hero">
+    <div class="series-label">Vision-Language Models Series &mdash; Presentation 04</div>
+    <h1>Document AI &mdash; <span class="accent">Donut, ColPali</span> &amp; Layout-Aware Models</h1>
+    <p class="subtitle">OCR pipelines vs end-to-end vision models, Donut, ColPali vision-based PDF retrieval, LayoutLM, UDOP, modern VLMs as document processors, chart-to-text, and production PDF pipeline patterns.</p>
+
+    <div class="tags">
+        <span class="tag">Donut</span>
+        <span class="tag">ColPali</span>
+        <span class="tag">LayoutLM</span>
+        <span class="tag">UDOP</span>
+        <span class="tag">Document AI</span>
+        <span class="tag">OCR-Free</span>
+        <span class="tag">PDF Parsing</span>
+    </div>
+
+    <div class="pipeline">
+        <span class="pipeline-step">PDF Page</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">OCR / Vision</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Layout Parse</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Embed / Retrieve</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Generate</span>
+    </div>
+</header>
+
+<section class="slide" id="slide-00">
+    <div class="slide-number">00</div>
+    <h2>Topics We&rsquo;ll Cover</h2>
+    <ul class="contents-list">
+        <li><a href="#slide-01">Documents as a Special Multimodal Target</a></li>
+        <li><a href="#slide-02">OCR-then-LLM Pipelines &mdash; When &amp; Why</a></li>
+        <li><a href="#slide-03">Donut &mdash; OCR-Free Document Understanding</a></li>
+        <li><a href="#slide-04">ColPali &mdash; Vision-Based Document Retrieval</a></li>
+        <li><a href="#slide-05">Layout-Aware Models &mdash; LayoutLM, UDOP</a></li>
+        <li><a href="#slide-06">Modern VLMs as Document Processors</a></li>
+        <li><a href="#slide-07">Tables &amp; Charts &mdash; Chart-to-Text</a></li>
+        <li><a href="#slide-08">Pipeline Patterns for Production Document AI</a></li>
+        <li><a href="#slide-09">What to Take Away</a></li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-01">
+    <div class="slide-number">01</div>
+    <h2>Documents as a Special Multimodal Target</h2>
+    <p>A PDF page is not a natural image. It is a precisely typeset composition of text, tables, figures, and layout structure that encodes meaning through <em>both</em> visual appearance and positional arrangement. Standard NLP models see it as raw text (after OCR) and discard spatial context. Standard vision models see it as pixels and miss the semantic structure. Documents demand a hybrid understanding.</p>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>What makes documents hard</h4>
+            <ul>
+                <li><strong>Multi-column layout:</strong> reading order is not left-to-right, top-to-bottom; columns must be detected and linearised</li>
+                <li><strong>Tables:</strong> cell adjacency encodes relational structure invisible to flat text</li>
+                <li><strong>Figures with captions:</strong> caption often appears below or beside the figure; cross-referencing requires layout</li>
+                <li><strong>Formulae:</strong> LaTeX/MathML symbols require specialist tokenisation</li>
+                <li><strong>Scanned documents:</strong> OCR noise + skew + font variation</li>
+                <li><strong>Mixed languages:</strong> RTL text, CJK characters, ligatures</li>
+            </ul>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Document AI task taxonomy</h4>
+            <ul>
+                <li><strong>Document classification:</strong> invoice vs contract vs receipt</li>
+                <li><strong>Key information extraction (KIE):</strong> total amount, date, vendor name</li>
+                <li><strong>Document Q&amp;A (DocVQA):</strong> answer free-form Qs about a page</li>
+                <li><strong>Table structure recognition:</strong> detect rows, columns, merged cells</li>
+                <li><strong>Document retrieval:</strong> find the relevant page in a 1,000-page corpus</li>
+                <li><strong>Chart understanding:</strong> extract data series values from bar/line/scatter plots</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Why &ldquo;just OCR it and feed to an LLM&rdquo; often fails</div>
+        <p>Tesseract / AWS Textract OCR produces flat text that loses column order, table structure, and figure-caption links. A 10-column financial table becomes a meaningless run-on string. Vision models that reason over the page image retain the 2D layout context. The field has split into two schools: improve the OCR and layout parsing pipeline (Amazon, Adobe, ABBYY approach) vs train end-to-end vision models that skip OCR entirely (Google Donut / ColPali approach).</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-02">
+    <div class="slide-number">02</div>
+    <h2>OCR-then-LLM Pipelines &mdash; When &amp; Why</h2>
+    <p>Despite the appeal of end-to-end vision models, OCR-then-LLM pipelines remain dominant in production document AI because they provide explainable intermediate representations, modular error correction, and strong performance on well-formatted PDFs and born-digital documents.</p>
+
+    <div class="diagram-flow">
+        <div class="diagram-box accent">PDF / Image</div>
+        <div class="diagram-arrow">&rarr;</div>
+        <div class="diagram-box">OCR Engine<br><span style="font-size:0.7rem">Tesseract / Textract / Azure / Surya</span></div>
+        <div class="diagram-arrow">&rarr;</div>
+        <div class="diagram-box">Layout Parser<br><span style="font-size:0.7rem">Detectron2 / DocLayout-YOLO / nougat</span></div>
+        <div class="diagram-arrow">&rarr;</div>
+        <div class="diagram-box">Markdown/HTML<br><span style="font-size:0.7rem">reading order + structure</span></div>
+        <div class="diagram-arrow">&rarr;</div>
+        <div class="diagram-box accent">LLM<br><span style="font-size:0.7rem">GPT-4 / Llama / Claude</span></div>
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Tool</th><th>Type</th><th>Strengths</th><th>Weaknesses</th></tr></thead>
+            <tbody>
+                <tr><td>Tesseract 5</td><td>Open-source OCR</td><td>Free, offline, 100+ langs, LSTM engine</td><td>Poor on low-DPI scans; no layout; 70&ndash;80% char accuracy on hand-written</td></tr>
+                <tr><td>AWS Textract</td><td>Cloud OCR + layout</td><td>Table/form extraction, bounding boxes, confidence scores</td><td>Cost at scale ($1.50/1k pages); US-region data residency constraint</td></tr>
+                <tr><td>Surya</td><td>Open-source, neural</td><td>Multi-language, layout-aware, benchmarks near Textract quality</td><td>GPU needed; 3&times; slower than Tesseract on CPU</td></tr>
+                <tr><td>Nougat (Meta)</td><td>End-to-end, vision</td><td>Scientific PDFs: preserves LaTeX equations, tables, figures natively</td><td>Hallucination on non-scientific docs; slow (1 page/sec on A100)</td></tr>
+                <tr><td>Marker</td><td>Open-source pipeline</td><td>Combines Surya OCR + layout; Markdown output; fast</td><td>Table merging heuristics can fail on complex grids</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Rule of thumb</div>
+        <p>Use OCR-then-LLM when: documents are born-digital PDFs (not scanned), layout is simple (single-column, no complex tables), and you need citation of exact text spans. Use end-to-end vision models when: documents are scanned images, contain complex tables or charts, or you need to retrieve by visual similarity.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-03">
+    <div class="slide-number">03</div>
+    <h2>Donut &mdash; OCR-Free Document Understanding</h2>
+    <p><strong>Donut (Document Understanding Transformer, Kim et al., NAVER 2022)</strong> eliminates the OCR step entirely. It is an encoder-decoder transformer that takes a page image as input and produces structured text (JSON, key-value pairs, HTML) directly, treating document understanding as a conditional generation task.</p>
+
+    <div class="canvas-wrap">
+        <svg viewBox="0 0 720 220" width="720" height="220" xmlns="http://www.w3.org/2000/svg">
+            <style>
+                .db { fill: #161b22; stroke: #30363d; }
+                .db.a { stroke: #76B900; fill: rgba(118,185,0,0.08); }
+                .dl { fill: #e6edf3; font-family: 'Space Grotesk', sans-serif; font-size: 11px; font-weight: 600; }
+                .ds { fill: #8b949e; font-family: 'JetBrains Mono', monospace; font-size: 9px; }
+                .da { stroke: #76B900; stroke-width: 1.5; fill: none; marker-end: url(#mdonut); }
+                .dt { fill: #76B900; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 11px; }
+            </style>
+            <defs>
+                <marker id="mdonut" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#76B900"/>
+                </marker>
+            </defs>
+            <text x="10" y="18" class="dt">Donut architecture: Swin encoder + BART-style decoder, conditioned on task token</text>
+
+            <rect x="10"  y="35" width="100" height="70" rx="4" class="db"/>
+            <text x="15"  y="55" class="dl">Page Image</text>
+            <text x="15"  y="70" class="ds">2560&times;1920 px</text>
+            <text x="15"  y="84" class="ds">resized + padded</text>
+            <text x="15"  y="98" class="ds">to model resolution</text>
+
+            <path d="M 110 70 L 150 70" class="da"/>
+
+            <rect x="150" y="35" width="130" height="70" rx="4" class="db a"/>
+            <text x="155" y="55" class="dl">Swin-B Encoder</text>
+            <text x="155" y="70" class="ds">1280 patch tokens</text>
+            <text x="155" y="84" class="ds">4-stage hierarchical</text>
+            <text x="155" y="98" class="ds">No OCR, no text input</text>
+
+            <path d="M 280 70 L 320 70" class="da"/>
+
+            <rect x="320" y="35" width="130" height="70" rx="4" class="db a"/>
+            <text x="325" y="55" class="dl">BART Decoder</text>
+            <text x="325" y="70" class="ds">8 layers, 768-d</text>
+            <text x="325" y="84" class="ds">cross-attn on Swin feats</text>
+            <text x="325" y="98" class="ds">teacher-forced training</text>
+
+            <path d="M 450 70 L 490 70" class="da"/>
+
+            <rect x="490" y="35" width="140" height="70" rx="4" class="db"/>
+            <text x="495" y="55" class="dl">Structured Output</text>
+            <text x="495" y="70" class="ds">&lt;s_date&gt;2024-03-01&lt;/s_date&gt;</text>
+            <text x="495" y="84" class="ds">&lt;s_total&gt;€142.50&lt;/s_total&gt;</text>
+            <text x="495" y="98" class="ds">JSON / HTML / plain text</text>
+
+            <text x="10" y="145" class="dt">Task conditioning</text>
+            <text x="10" y="162" class="ds">DocVQA: prepend &lt;s_docvqa&gt;&lt;s_question&gt;{q}&lt;/s_question&gt; &rarr; decoder generates answer</text>
+            <text x="10" y="176" class="ds">Document classification: prepend &lt;s_classify&gt; &rarr; decoder generates class label token</text>
+            <text x="10" y="190" class="ds">KIE (receipts, forms): prepend &lt;s_rvlcdip&gt; &rarr; decoder generates key-value JSON</text>
+            <text x="10" y="204" class="ds">Training: IIT-CDIP 11M + SynthDoG (synthetic document generator) 1M</text>
+        </svg>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Donut benchmarks &amp; limitations</div>
+        <p>DocVQA: <strong>67.5% ANLS</strong> (vs Textract + LLM pipeline ~85%). CORD (receipt KIE): <strong>91.3% F1</strong>. RVL-CDIP document classification: <strong>95.3%</strong>. Donut excels at templated forms and receipts, but struggles on multi-page documents, complex tables, and low-DPI scans. The Swin encoder serialises 2D layout information but cannot re-read patches; it cannot handle text that wraps across the encoder&rsquo;s receptive field boundaries at coarse scales.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-04">
+    <div class="slide-number">04</div>
+    <h2>ColPali &mdash; Vision-Based Document Retrieval</h2>
+    <p><strong>ColPali (Faysse et al., 2024)</strong> addresses the document retrieval problem: given a text query, find the relevant page(s) in a large PDF corpus. Traditional approaches OCR the PDFs, embed the text, and retrieve. ColPali embeds each page as a set of <strong>patch-level visual embeddings</strong> using a PaliGemma-based VLM, then scores queries against patches via late interaction (the ColBERT mechanism).</p>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Indexing (offline)</h4>
+            <p>For each document page:</p>
+            <ol>
+                <li>Render to 448&times;448 image</li>
+                <li>Encode with PaliGemma-3B vision encoder &rarr; 1024 patch embeddings of 128-d each</li>
+                <li>Store all 1024 patch embeddings per page (L2-normalised)</li>
+                <li>Index: each page = 1024 &times; 128-d = 131,072 floats = 0.5 MB at fp32</li>
+            </ol>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Retrieval (online)</h4>
+            <p>For each query string:</p>
+            <ol>
+                <li>Tokenise &rarr; encode with PaliGemma text encoder &rarr; M query token embeddings (128-d)</li>
+                <li><strong>MaxSim scoring (ColBERT-style):</strong> for each query token, find max cosine similarity across all 1024 page patches; sum over query tokens</li>
+                <li>Score = &sum;<sub>q</sub> max<sub>p</sub>(cos(q, p))</li>
+                <li>Rank pages by score; return top-K</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">ColPali inference with colpali-engine library</div>
+<pre><code><span class="kw">from</span> colpali_engine.models <span class="kw">import</span> ColPali, ColPaliProcessor
+<span class="kw">import</span> torch
+<span class="kw">from</span> PIL <span class="kw">import</span> Image
+
+model     <span class="kw">=</span> ColPali.<span class="fn">from_pretrained</span>(<span class="str">"vidore/colpali-v1.2"</span>, torch_dtype<span class="kw">=</span>torch.bfloat16)
+processor <span class="kw">=</span> ColPaliProcessor.<span class="fn">from_pretrained</span>(<span class="str">"vidore/colpali-v1.2"</span>)
+
+<span class="cm"># Index: encode page images</span>
+pages  <span class="kw">=</span> [<span class="type">Image</span>.<span class="fn">open</span>(p) <span class="kw">for</span> p <span class="kw">in</span> page_paths]
+inputs <span class="kw">=</span> processor.<span class="fn">process_images</span>(pages)
+<span class="kw">with</span> torch.no_grad():
+    page_embeds <span class="kw">=</span> model(**inputs)   <span class="cm"># [N_pages, 1024, 128]</span>
+
+<span class="cm"># Query</span>
+query_input  <span class="kw">=</span> processor.<span class="fn">process_queries</span>([<span class="str">"What is the total revenue for Q3 2023?"</span>])
+<span class="kw">with</span> torch.no_grad():
+    query_embed <span class="kw">=</span> model(**query_input)  <span class="cm"># [1, M_q, 128]</span>
+
+<span class="cm"># MaxSim scoring (ColBERT)</span>
+scores <span class="kw">=</span> processor.<span class="fn">score_multi_vector</span>(query_embed, page_embeds)  <span class="cm"># [1, N_pages]</span>
+top_pages <span class="kw">=</span> scores.<span class="fn">topk</span>(<span class="num">5</span>).indices</code></pre>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">ViDoRe benchmark results</div>
+        <p>On ViDoRe (Visual Document Retrieval benchmark, 10 diverse PDF corpora), ColPali achieves <strong>NDCG@5 = 89.3</strong> vs BM25 = 44.1, DPR-text (OCR &rarr; dense embed) = 74.3, and BGE-M3 (text) = 83.5. ColPali is the first retrieval model to significantly outperform text-based retrieval on document pages containing tables, charts, and complex layouts. The key reason: it does not require accurate OCR to retrieve &mdash; layout, colour, and chart shape contribute to the match score.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-05">
+    <div class="slide-number">05</div>
+    <h2>Layout-Aware Models &mdash; LayoutLM, UDOP</h2>
+    <p>Before end-to-end vision models, the state of the art in document understanding was to augment a BERT-style language model with explicit 2D position encodings derived from OCR bounding boxes. This allowed the model to reason about both word content and spatial layout simultaneously.</p>
+
+    <div class="hierarchy">
+        <div class="hierarchy-level">
+            <div class="hierarchy-label">LayoutLM v1</div>
+            <div class="hierarchy-items">
+                <span class="hierarchy-item accent">BERT token embed</span>
+                <span class="hierarchy-item">+ 2D pos embed (x0,y0,x1,y1 from OCR)</span>
+                <span class="hierarchy-item">+ image region embed (ResNet CNN)</span>
+                <span class="hierarchy-item">&rarr; FUNSD F1: 79.3%</span>
+            </div>
+        </div>
+        <div class="hierarchy-level">
+            <div class="hierarchy-label">LayoutLM v2</div>
+            <div class="hierarchy-items">
+                <span class="hierarchy-item accent">Text + layout + image jointly pre-trained</span>
+                <span class="hierarchy-item">Visual-layout pre-training on IIT-CDIP 11M</span>
+                <span class="hierarchy-item">Spatial-aware self-attention (relative 2D bias)</span>
+                <span class="hierarchy-item">&rarr; FUNSD F1: 82.8%, DocVQA ANLS: 78.1%</span>
+            </div>
+        </div>
+        <div class="hierarchy-level">
+            <div class="hierarchy-label">LayoutLM v3</div>
+            <div class="hierarchy-items">
+                <span class="hierarchy-item accent">Unified text-image pre-training (no CNN)</span>
+                <span class="hierarchy-item">Masked layout-language modelling</span>
+                <span class="hierarchy-item">Word-patch alignment objective</span>
+                <span class="hierarchy-item">&rarr; FUNSD F1: 92.1%, DocVQA ANLS: 83.4%</span>
+            </div>
+        </div>
+        <div class="hierarchy-level">
+            <div class="hierarchy-label">UDOP (2023)</div>
+            <div class="hierarchy-items">
+                <span class="hierarchy-item accent">T5-based encoder-decoder</span>
+                <span class="hierarchy-item">Joint text, layout (x0,y0,x1,y1), image tokens</span>
+                <span class="hierarchy-item">Unified seq-to-seq for all doc tasks</span>
+                <span class="hierarchy-item">&rarr; DocVQA ANLS: 84.7%, FUNSD: 93.3%</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">UDOP&rsquo;s &ldquo;joint text and layout reconstruction&rdquo;</div>
+        <p>UDOP pre-trains on a novel objective: given a page with some text tokens masked, predict both the masked text <em>and</em> the bounding box coordinates of those tokens. This forces the model to learn a tighter binding between what a word says and where it appears &mdash; critical for KIE tasks where the same word (e.g. &ldquo;Total&rdquo;) can be a column header or a label depending on its position in the table.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-06">
+    <div class="slide-number">06</div>
+    <h2>Modern VLMs as Document Processors</h2>
+    <p>As of 2024&ndash;2025, the best results on DocVQA and similar benchmarks come not from purpose-built document models but from general VLMs with high-resolution tiling. The key is getting enough tokens per page to read the text without explicit OCR.</p>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Model</th><th>DocVQA ANLS</th><th>InfoVQA</th><th>ChartQA</th><th>OCRBench</th><th>Approach</th></tr></thead>
+            <tbody>
+                <tr><td>LayoutLMv3-Large</td><td>83.4%</td><td>46.0%</td><td>&mdash;</td><td>&mdash;</td><td>OCR + 2D pos embed</td></tr>
+                <tr><td>UDOP</td><td>84.7%</td><td>58.5%</td><td>&mdash;</td><td>&mdash;</td><td>OCR + T5 seq2seq</td></tr>
+                <tr><td>Donut-base</td><td>67.5%</td><td>11.6%</td><td>&mdash;</td><td>&mdash;</td><td>OCR-free (Swin+BART)</td></tr>
+                <tr><td>InternVL2-76B</td><td>94.1%</td><td>88.7%</td><td>88.4%</td><td>825</td><td>High-res tiling (40 tiles)</td></tr>
+                <tr><td>Qwen2-VL-72B</td><td>96.5%</td><td>92.2%</td><td>88.3%</td><td>866</td><td>Native res, 2D-RoPE</td></tr>
+                <tr><td>GPT-4V</td><td>88.4%</td><td>75.1%</td><td>78.5%</td><td>645</td><td>Unknown (tiling probable)</td></tr>
+                <tr><td>Claude 3.5 Sonnet</td><td>~91%</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>Native multimodal</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Why Qwen2-VL leads on DocVQA</div>
+        <p>Qwen2-VL&rsquo;s dynamic resolution encoding with 2D-RoPE allows it to process a full A4 page at up to 1280px resolution with no padding artefacts. InternVL2-76B achieves comparable results via 40 tiles of 448px (equivalent effective resolution ~2240px). Both avoid the resolution ceiling of fixed 448px single-image encoders, which cap DocVQA at ~85% ANLS. The LLM backbone scale (72B vs 7B) also matters: large models are better at interpreting partially-degraded OCR regions without OCR grounding.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-07">
+    <div class="slide-number">07</div>
+    <h2>Tables &amp; Charts &mdash; Chart-to-Text</h2>
+    <p>Tables and charts are the hardest document elements for both OCR pipelines and vision models. A table is a 2D relational structure; a chart is a visual encoding of quantitative data. Both require understanding geometric structure, not just reading text.</p>
+
+    <h3>Table structure recognition</h3>
+    <p><strong>TableTransformer</strong> (Smock et al., Microsoft 2022) uses DETR (DEtection TRansformer) to detect table bounding boxes and then predict row/column/cell structure as a set of objects. Trained on PubTables-1M (995K annotated tables from scientific publications) and FinTabNet (112K financial tables). TableTransformer achieves 92.3% TEDS-S on PubTabNet &mdash; beating earlier CNN approaches by 5pp.</p>
+
+    <h3>Chart-to-text (DePlot, Matcha)</h3>
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>DePlot (Liu et al., Google 2023)</h4>
+            <p>Fine-tunes PaLI on chart linearisation: given a chart image, output a markdown table of the underlying data. The table is then passed to an LLM (PaLM) for Q&amp;A. Two-step pipeline separates visual parsing from language reasoning.</p>
+            <ul>
+                <li>ChartQA: <strong>56.0%</strong> (one-shot, no fine-tuning on ChartQA)</li>
+                <li>The linearised table is inspectable &mdash; useful for explainability</li>
+            </ul>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Matcha (Liu et al., Google 2023)</h4>
+            <p>Fine-tunes PaLI end-to-end on chart Q&amp;A, chart-to-text, and chart data extraction jointly. No separate linearisation step; model answers directly from the chart image.</p>
+            <ul>
+                <li>ChartQA: <strong>90.2%</strong> (fine-tuned)</li>
+                <li>FigureQA: <strong>93.5%</strong></li>
+                <li>Trained on ChartQA + PlotQA + Chart-to-Text dataset (30K samples)</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Production chart extraction recipe</div>
+        <p>For a production chart extraction system that does not require fine-tuning: (1) use <strong>DePlot</strong> (or Qwen2-VL with a &ldquo;extract data table from this chart&rdquo; prompt) to get a structured markdown table, (2) pass the table to an LLM for Q&amp;A or analysis, (3) validate numeric outputs against the extracted values. This two-step approach is more debuggable than end-to-end and allows the LLM to reason without the visual grounding constraint.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-08">
+    <div class="slide-number">08</div>
+    <h2>Pipeline Patterns for Production Document AI</h2>
+    <p>Production document AI must handle heterogeneous inputs (scanned, born-digital, mixed), latency constraints, cost, and observability. Four patterns cover most real-world requirements:</p>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Pattern 1: OCR + RAG (classic)</h4>
+            <p><strong>Use when:</strong> large corpus (&gt;10k pages), text-centric documents, latency &lt; 500ms for retrieval.</p>
+            <ol style="font-size:0.85rem">
+                <li>Ingest: Marker/Surya OCR + layout &rarr; Markdown per page</li>
+                <li>Chunk: page-level or paragraph-level (512 tokens)</li>
+                <li>Embed: OpenAI <code>text-embedding-3-small</code> or BGE-M3</li>
+                <li>Store: pgvector or Qdrant</li>
+                <li>Query: dense retrieval + BM25 hybrid + reranker (Cohere Rerank-3)</li>
+                <li>Generate: GPT-4o / Claude 3.5 with retrieved chunks in context</li>
+            </ol>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Pattern 2: ColPali + VLM (vision-native)</h4>
+            <p><strong>Use when:</strong> complex layouts, charts, mixed text/image, multilingual scans.</p>
+            <ol style="font-size:0.85rem">
+                <li>Ingest: render each PDF page to 448px PNG; run <code>colpali-v1.2</code> &rarr; store patch embeddings</li>
+                <li>Query: encode query with ColPali; MaxSim retrieve top-K pages</li>
+                <li>Generate: pass top-K page images directly to Qwen2-VL-72B or GPT-4V as multi-image prompt</li>
+                <li>Post-process: extract structured fields from VLM response</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Pattern 3: Routing by document type</h4>
+            <p><strong>Use when:</strong> heterogeneous corpus with predictable document types (invoices, contracts, reports).</p>
+            <ul style="font-size:0.85rem">
+                <li>Classify page: VLM + prompt or fine-tuned LayoutLMv3 classifier</li>
+                <li>Invoice: route to KIE model (UDOP or Donut fine-tuned on CORD)</li>
+                <li>Contract: route to OCR + clause extraction LLM</li>
+                <li>Chart-heavy report: route to ColPali + DePlot pipeline</li>
+                <li>Benefits: each route can be optimised independently; observability per type</li>
+            </ul>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Pattern 4: Unified VLM (simplest)</h4>
+            <p><strong>Use when:</strong> low volume (&lt;1k pages/day), highest possible accuracy required, budget not a constraint.</p>
+            <ul style="font-size:0.85rem">
+                <li>Render every page to high-res PNG (&ge; 1024px)</li>
+                <li>Send to Claude 3.5 / GPT-4V / Qwen2-VL-72B API directly</li>
+                <li>Structured output via tool-use / JSON mode</li>
+                <li>Cost: ~$0.005&ndash;$0.02 per page depending on model and tile count</li>
+                <li>Latency: 2&ndash;8 sec per page including API round-trip</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Observability &amp; quality gates</div>
+        <p>Always instrument document AI pipelines with: (1) per-page confidence scores from OCR or VLM (use token log-probabilities or self-evaluation prompts); (2) hallucination checks by cross-referencing extracted numbers against visible text; (3) a ground-truth hold-out set of 100&ndash;500 labelled pages per document type. ANLS score on the hold-out set should be monitored weekly &mdash; document corpus drift is real as new document templates enter production.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-09">
+    <div class="slide-number">09</div>
+    <h2>What to Take Away</h2>
+    <ul>
+        <li><strong>Documents are not natural images.</strong> Layout, 2D text position, table structure, and figure-caption relationships all encode meaning that flat OCR text loses. Vision models that reason over the page image retain this context.</li>
+        <li><strong>Donut</strong> (Swin encoder + BART decoder) was the first competitive OCR-free document understanding model. It excels at templated forms but saturates at ~85% DocVQA ANLS &mdash; high-resolution tiling VLMs now outperform it at 94&ndash;96%.</li>
+        <li><strong>ColPali</strong> is the current best practice for document retrieval in complex corpora. Its MaxSim scoring over patch embeddings beats text-based dense retrieval by 5&ndash;15 NDCG@5 points on layout-heavy documents.</li>
+        <li><strong>LayoutLM / UDOP</strong> remain relevant when OCR is reliable and you need interpretable intermediate representations (bounding box outputs, NER tagging per detected text span).</li>
+        <li><strong>Modern VLMs (Qwen2-VL-72B, InternVL2-76B)</strong> reach 94&ndash;96% DocVQA ANLS with no document-specific training &mdash; just high-resolution tiling. For most new projects, start here before investing in specialised pipelines.</li>
+        <li><strong>Four pipeline patterns cover production:</strong> OCR+RAG (text-centric, large scale), ColPali+VLM (visual-native), routing by document type (heterogeneous corpora), or unified VLM API (simplest, highest accuracy, highest cost).</li>
+    </ul>
+
+    <div class="callout">
+        <div class="callout-label">Series complete</div>
+        <p>You have now covered the full VLM stack: CLIP contrastive learning and the shared embedding space (Deck 01), ViT architectures and their spatial properties (Deck 02), modern VLM connector designs and evaluation (Deck 03), and document-specific pipelines (this deck). The natural next step is Deck series on Retrieval-Augmented Generation and Multimodal Agents, both of which build directly on these components.</p>
+    </div>
+</section>
+
+<footer class="footer">
+    <p>Part of the <a href="https://github.com/BrendanJamesLynskey/LLM_Hub_Vision_Language">Vision-Language Models Series</a></p>
+    <p style="margin-top: 0.5rem; font-size: 0.8rem;"><a href="https://github.com/BrendanJamesLynskey/LLM_Hub_Vision_Language">Back to Series Index</a></p>
+</footer>
+<script>
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.style.opacity = '1';
+                entry.target.style.transform = 'translateY(0)';
+            }
+        });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.slide').forEach(slide => {
+        slide.style.opacity = '0';
+        slide.style.transform = 'translateY(30px)';
+        slide.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+        observer.observe(slide);
+    });
+</script>
+</body>
+</html>
